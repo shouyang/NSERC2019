@@ -1,0 +1,28 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+# [6] Density Estimation
+
+```{r}
+x1 = c(rnorm(100, mean = 0, sd = 1))
+x2 = c(rnorm(50, mean = -1, sd = 1), rnorm(50,mean = 1, sd = 1))
+x3 = c(rnorm(50, mean = -2, sd = 1), rnorm(50,mean = 2, sd = 1))
+x4 = c(rnorm(50, mean = -3, sd = 1), rnorm(50,mean = 3, sd = 1))
+
+for (x in list(x1,x2,x3,x4)) {
+    # Rules of Thumb Methods
+    d_silverman = density(x, bw = bw.nrd0(x), kernel = "gaussian")
+    d_scott     = density(x, bw = bw.nrd(x), kernel = "gaussian")
+    # Cross Validation Methods
+    d_lscv      = density(x, bw = bw.ucv(x), kernel = 'gaussian')
+    d_bcv       = density(x, bw = bw.bcv(x), kernel = 'gaussian')
+    
+    stripchart(x)
+    plot(d_silverman, col = 'red')
+    lines(d_scott, col = 'green')
+    lines(d_lscv, col = 'blue')
+    lines(d_bcv, col = 'purple')
+    }
+
+```

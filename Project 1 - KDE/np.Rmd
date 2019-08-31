@@ -1,0 +1,159 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+``` {r setup}
+library(np)
+library(benchden)
+```
+
+``` {r Visualizing various kernels on various n}
+estimate_points = seq(-5,5,0.01)
+
+n = c(30,100, 1000) # For larger n values, this package is quite slow given that it seems to use cv as its default.
+for (i in n) {
+    test_data = rnorm(i)
+
+    # Package supports only one type of bw by rule of thumb
+    # Supports something related to kernel order, I'm not sure of what this is.
+    # Package defaults to likelihood cv, appears to only support rules of thumb for guassian kernel)
+    guassian_bw     = npudensbw(~test_data, bwtype = "fixed", ckertype="gaussian")
+    epanechnikov_bw = npudensbw(~test_data, bwtype = "fixed", ckertype="epanechnikov")
+    uniform_bw      = npudensbw(~test_data, bwtype = "fixed", ckertype="uniform")
+    
+    guassian_kde     = npudens(guassian_bw, tdat = test_data, edat = estimate_points, itmax = 1000, nmulti = 1)
+    epanechnikov_kde = npudens(epanechnikov_bw, tdat = test_data, edat = estimate_points, itmax = 1000, nmulti = 1)
+    uniform_kde      = npudens(uniform_bw, tdat = test_data, edat = estimate_points, itmax = 1000, nmulti = 1)
+    
+    plot(estimate_points, dnorm(estimate_points), type = "l", main = i)
+        lines(estimate_points, guassian_kde$dens, type = "l", col = "red")
+        lines(estimate_points, epanechnikov_kde$dens, type = "l", col = "blue")
+        lines(estimate_points, uniform_kde$dens, type = "l", col = "green")
+        points(test_data, rep(0.01, length(test_data)))
+        
+}
+```
+
+``` {r Visualizing various runs using different samples (Using maximum likelyhood cv)}
+# Warning: This is really slow using cv
+estimate_points = seq(-5,5,0.01)
+RUNS_PER_N  = 30
+
+for (n in c(30,100,1000)) {
+    plot(estimate_points, dnorm(estimate_points), type = "l", main = n)
+    for (a in 1:RUNS_PER_N) {
+        test_data = rnorm(n)
+        guassian_bw  = npudensbw(~test_data, bwtype = "fixed", ckertype="gaussian")
+        guassian_kde = npudens(guassian_bw, tdat = test_data, edat = estimate_points, itmax = 1000, nmulti = 1)
+        
+        lines(estimate_points, guassian_kde$dens, type = "l", col = "red")
+    }
+}
+lines(estimate_points, dnorm(estimate_points), type = "l")
+```
+
+``` {r Visualizing various runs using different samples (Using Normal Reference)}
+estimate_points = seq(-5,5,0.01)
+RUNS_PER_N  = 30
+
+for (n in c(30,100,1000,10000,100000)) {
+    plot(estimate_points, dnorm(estimate_points), type = "l", main = n)
+    for (a in 1:RUNS_PER_N) {
+        test_data = rnorm(n)
+        guassian_bw  = npudensbw(~test_data, bwmethod = "normal-reference", bwtype = "fixed", ckertype="gaussian")
+        guassian_kde = npudens(guassian_bw, tdat = test_data, edat = estimate_points, itmax = 1000, nmulti = 1)
+        
+        lines(estimate_points, guassian_kde$dens, type = "l", col = "red")
+    }
+}
+lines(estimate_points, dnorm(estimate_points), type = "l")
+```
+
+
+
+
+``` {r Using various halfwidth rules, warning = FALSE}
+estimate_points = seq(-5,5,0.01)
+RUNS_PER_N  = 15
+
+for (n in c(30,100,1000)) {
+    plot(estimate_points, dnorm(estimate_points), type = "l", main = n)
+    for (a in 1:RUNS_PER_N) {
+        test_data = rnorm(n)
+        
+        cvml_bw = npudensbw(~test_data, bwmethod = "cv.ml", bwtype = "fixed", ckertype="gaussian")
+        cvls_bw = npudensbw(~test_data, bwmethod = "cv.ls", bwtype = "fixed", ckertype="gaussian")
+        rule_bw = npudensbw(~test_data, bwmethod = "normal-reference", bwtype = "fixed", ckertype="gaussian")
+        
+        cvml_kde = npudens(cvml_bw, tdat = test_data, edat = estimate_points, itmax = 1000, nmulti = 1)
+        cvls_kde = npudens(cvls_bw, tdat = test_data, edat = estimate_points, itmax = 1000, nmulti = 1)
+        rule_kde = npudens(rule_bw, tdat = test_data, edat = estimate_points, itmax = 1000, nmulti = 1)
+        
+        lines(estimate_points, cvml_kde$dens, type = "l", col = "red")
+        lines(estimate_points, cvls_kde$dens, type = "l", col = "blue")
+        lines(estimate_points, rule_kde$dens, type = "l", col = "green")
+        
+    }
+        
+    lines(seq(-5,5,0.01), dnorm(seq(-5, 5,0.01)), type="l")
+}
+```
+
+``` {r Boxplots of H over varing samples, warning = FALSE}
+RUNS_PER_N  = 30
+
+
+
+for (n in c(30,100,1000)) {
+    
+    cvml_bw = rep(0, RUNS_PER_N)
+    cvls_bw = rep(0, RUNS_PER_N)
+    rule_bw = rep(0, RUNS_PER_N)
+    
+    for (i in 1:RUNS_PER_N) {
+        test_data = rnorm(n)
+        
+        cvml_bw[i] = npudensbw(~test_data, bwmethod = "cv.ml", bwtype = "fixed", ckertype="gaussian")$bw
+        cvls_bw[i] = npudensbw(~test_data, bwmethod = "cv.ls", bwtype = "fixed", ckertype="gaussian")$bw
+        rule_bw[i] = npudensbw(~test_data, bwmethod = "normal-reference", bwtype = "fixed", ckertype="gaussian")$bw
+    }
+    
+    df = data.frame(cvml_bw, cvls_bw, rule_bw)
+    boxplot(df, main = sprintf("N Samples = %d", n))
+}
+```
+
+```  {r Spearman Correlation between various methods and actual, warning = FALSE}
+RUNS_PER_N  = 30
+estimate_points = seq(-5,5,0.01)
+
+
+for (n in c(30,100,1000)) {
+
+    cvml_cor = rep(0, RUNS_PER_N)
+    cvls_cor= rep(0, RUNS_PER_N)
+    rule_cor = rep(0, RUNS_PER_N)
+    
+    for (i in 1:RUNS_PER_N) {
+        test_data = rnorm(n)
+        
+        cvml_bw = npudensbw(~test_data, bwmethod = "cv.ml", bwtype = "fixed", ckertype="gaussian")
+        cvls_bw = npudensbw(~test_data, bwmethod = "cv.ls", bwtype = "fixed", ckertype="gaussian")
+        rule_bw = npudensbw(~test_data, bwmethod = "normal-reference", bwtype = "fixed", ckertype="gaussian")
+    
+        cvml_kde = npudens(cvml_bw, tdat = test_data, edat = estimate_points, itmax = 1000, nmulti = 1)
+        cvls_kde = npudens(cvls_bw, tdat = test_data, edat = estimate_points, itmax = 1000, nmulti = 1)
+        rule_kde = npudens(rule_bw, tdat = test_data, edat = estimate_points, itmax = 1000, nmulti = 1)
+        
+        cvml_cor[i] = cor( cvml_kde$dens, dnorm(estimate_points), method = "spearman")
+        cvls_cor[i] = cor( cvls_kde$dens, dnorm(estimate_points), method = "spearman")
+        rule_cor[i] = cor( rule_kde$dens, dnorm(estimate_points), method = "spearman")
+    }
+    
+    df = data.frame(cvml_cor, cvls_cor, rule_cor)
+    boxplot(df, main = sprintf("N Samples = %d", n))
+}
+
+```
+

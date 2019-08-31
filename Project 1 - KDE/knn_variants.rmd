@@ -1,0 +1,98 @@
+``` {r setup}
+library(benchden)
+library(mclust)
+library(np)
+library(FNN)
+library(ggplot2)
+
+vol_hypersphere = function(r = 1, d = 1) {
+    nom   = pi ^ (d/2)
+    denom = gamma(d/2 + 1)
+    
+    unit_vol = nom / denom
+    
+    return ( unit_vol * (r ^ d) )
+}
+knn_density = function(data, query, k = 2)
+{
+    n = dim(t(t(data)))[1]
+    d = dim(t(t(data)))[2]
+    k = round(k)
+    
+    
+    radius_per_query  = knnx.dist(data, query, k = k)[,k]
+    density_per_query = (k/n) * (1 / vol_hypersphere(radius_per_query, d = d))
+    
+    return (density_per_query)
+}
+
+knn_density_max_radius = function(data, query, k = 2)
+{
+    n = dim(t(t(data)))[1]
+    d = dim(t(t(data)))[2]
+    k = round(k)
+    
+    
+    radius_per_query  = knnx.dist(data, query, k = k)[,k]
+    density_per_query = (1 / radius_per_query) * (k/n)
+    
+    return (density_per_query)
+}
+
+knn_density_sum_radius = function(data, query, k = 2)
+{
+    n = dim(t(t(data)))[1]
+    d = dim(t(t(data)))[2]
+    k = round(k)
+    
+    
+    radius_per_query  = apply(knnx.dist(data, query, k = k), 1 ,mean)
+    density_per_query = (1 / radius_per_query) * (k / n)
+    
+    return (density_per_query)
+}
+```
+
+
+``` {r}
+EVAL_RANGE = seq(-5,5,0.01)
+BENCHDEN_DISTRIBUTIONS = c(2, 11, 12, 22, 24)
+N_SAMPLES = 1000
+N_RUNS    = 100
+K         = N_SAMPLES ^ (4/5)
+
+
+vol_cor = rep(0, N_RUNS)
+max_cor = rep(0, N_RUNS)
+sum_cor = rep(0, N_RUNS)
+
+vol_max_cor = rep(0, N_RUNS)
+vol_sum_cor = rep(0, N_RUNS)
+max_sum_cor = rep(0, N_RUNS)
+
+
+
+
+for (id in BENCHDEN_DISTRIBUTIONS) {
+    
+    for (i in 1:N_RUNS){
+        test_data = rberdev(1000, dnum = id)
+        actual_density = dberdev(EVAL_RANGE, dnum = id)
+        
+        
+        vol_radius_estimate = knn_density(test_data,EVAL_RANGE, K)
+        max_radius_estimate = knn_density_max_radius(test_data, EVAL_RANGE, K)
+        sum_radius_estimate = knn_density_sum_radius(test_data, EVAL_RANGE, K)
+        
+        vol_cor[i] = cor(actual_density, vol_radius_estimate, method = "pearson")
+        max_cor[i] = cor(actual_density, max_radius_estimate, method = "pearson")
+        sum_cor[i] = cor(actual_density, sum_radius_estimate, method = "pearson")
+        
+        vol_max_cor[i] = cor(max_radius_estimate, vol_radius_estimate, method = "pearson")
+        vol_sum_cor[i] = cor(sum_radius_estimate, vol_radius_estimate, method = "pearson")
+        max_sum_cor[i] = cor(sum_radius_estimate, max_radius_estimate, method = "pearson")
+    }
+    df = data.frame(vol_max_cor, vol_sum_cor, max_sum_cor)
+    boxplot(df, main = sprintf("Pearson Cor Of KNN variants - %s", berdev(id)$name) )
+}
+```

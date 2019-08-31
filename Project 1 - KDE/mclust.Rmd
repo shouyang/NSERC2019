@@ -1,0 +1,600 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r setup}
+library(benchden)
+library(mclust)
+library(np)
+library(FNN)
+library(ggplot2)
+
+vol_hypersphere = function(r = 1, d = 1) {
+    nom   = pi ^ (d/2)
+    denom = gamma(d/2 + 1)
+    
+    unit_vol = nom / denom
+    
+    return ( unit_vol * (r ^ d) )
+}
+knn_density = function(data, query, k = 2)
+{
+    n = dim(t(t(data)))[1]
+    d = dim(t(t(data)))[2]
+    k = round(k)
+    
+    
+    radius_per_query  = apply(knnx.dist(data, query, k = k), 1 ,max)
+    density_per_query = (k/n) * (1 / vol_hypersphere(radius_per_query, d = d))
+    
+    return (density_per_query)
+}
+
+knn_density_max_radius = function(data, query, k = 2)
+{
+    n = dim(t(t(data)))[1]
+    d = dim(t(t(data)))[2]
+    k = round(k)
+    
+    
+    radius_per_query  = apply(knnx.dist(data, query, k = k), 1 ,max)
+    density_per_query = (radius_per_query / k)
+    
+    return (density_per_query)
+}
+
+```
+
+
+``` {r}
+
+BENCHDEN_DISTRIBUTIONS = c(2, 11, 12, 22, 24)
+N_SAMPLES = 1000
+
+
+
+for (dnum in BENCHDEN_DISTRIBUTIONS)
+{
+    # Generate sample data from distribution
+    test_data = rberdev(N_SAMPLES, dnum = dnum)
+    # Get various density estimates
+    default_estimate  = densityMclust(test_data, G = c(1:9, N_SAMPLES / 100, N_SAMPLES / 20, N_SAMPLES / 10, N_SAMPLES / 5))
+    K_0.01_estimate   = densityMclust(test_data, G = (N_SAMPLES / 100))
+    K_0.05_estimate   = densityMclust(test_data, G = (N_SAMPLES / 20))
+    K_0.1_estimate    = densityMclust(test_data, G = (N_SAMPLES / 10))
+    K_0.2_estimate    = densityMclust(test_data, G = (N_SAMPLES / 5))
+    # Plot density estimates
+    plot(default_estimate, what="BIC", main = "")
+    plot(default_estimate, what="density", 
+         main = sprintf("Model Name = %s, G = %d, BIC = %f, dnum = %d",
+                        summary(default_estimate)$modelName, 
+                        summary(default_estimate)$G, 
+                        summary(default_estimate)$bic,
+                        dnum))
+        lines(seq(-10,10,0.01), dberdev(seq(-10,10,0.01), dnum = dnum), col = "red")
+    
+    plot(K_0.01_estimate, what="density",
+              main = sprintf("Model Name = %s, G = %d, BIC = %f, dnum = %d",
+                        summary(K_0.01_estimate)$modelName, 
+                        summary(K_0.01_estimate)$G, 
+                        summary(K_0.01_estimate)$bic,
+                        dnum))
+        lines(seq(-10,10,0.01), dberdev(seq(-10,10,0.01), dnum = dnum), col = "red")
+    
+    plot(K_0.05_estimate, what="density",
+              main = sprintf("Model Name = %s, G = %d, BIC = %f,  dnum = %d",
+                        summary(K_0.05_estimate)$modelName, 
+                        summary(K_0.05_estimate)$G, 
+                        summary(K_0.05_estimate)$bic,
+                        dnum))
+        lines(seq(-10,10,0.01), dberdev(seq(-10,10,0.01), dnum = dnum), col = "red")
+
+    plot(K_0.1_estimate, what="density",
+              main = sprintf("Model Name = %s, G = %d, BIC = %f, dnum = %d",
+                        summary(K_0.1_estimate)$modelName, 
+                        summary(K_0.1_estimate)$G, 
+                        summary(K_0.1_estimate)$bic,
+                        dnum))
+        lines(seq(-10,10,0.01), dberdev(seq(-10,10,0.01), dnum = dnum), col = "red")
+    
+    plot(K_0.2_estimate, what="density",
+                   main = sprintf("Model Name = %s, G = %d, BIC = %f, dnum = %d",
+                        summary(K_0.2_estimate)$modelName, 
+                        summary(K_0.2_estimate)$G, 
+                        summary(K_0.2_estimate)$bic,
+                        dnum))
+        lines(seq(-10,10,0.01), dberdev(seq(-10,10,0.01), dnum = dnum), col = "red")
+}
+```
+
+``` {r, message = TRUE, warning = FALSE}
+BENCHDEN_DISTRIBUTIONS = c(2, 11, 12, 22, 24)
+N_SAMPLES = 9000
+RUNS_PER_DISTRIBUTION  = 30
+
+for (dnum in BENCHDEN_DISTRIBUTIONS) {
+    default_estimate_cor = rep(0, RUNS_PER_DISTRIBUTION)
+    K_0.01_estimate_cor  = rep(0, RUNS_PER_DISTRIBUTION)
+    K_0.05_estimate_cor  = rep(0, RUNS_PER_DISTRIBUTION)
+    K_0.1_estimate_cor   = rep(0, RUNS_PER_DISTRIBUTION)
+    K_0.2_estimate_cor   = rep(0, RUNS_PER_DISTRIBUTION)
+    kde_estimate_cor     = rep(0, RUNS_PER_DISTRIBUTION)
+    knn_estimate_cor     = rep(0, RUNS_PER_DISTRIBUTION)
+
+        
+    for (run in 1:RUNS_PER_DISTRIBUTION)
+    {
+        message(run)
+        test_data = rberdev(N_SAMPLES, dnum = dnum)
+        
+        default_estimate   = densityMclust(test_data, G = c(1:9))
+        K_0.01_estimate    = densityMclust(test_data, G = round(N_SAMPLES / 100))
+        K_0.05_estimate    = densityMclust(test_data, G = round(N_SAMPLES / 20))
+        K_0.1_estimate     = densityMclust(test_data, G = round(N_SAMPLES / 10))
+        K_0.2_estimate     = densityMclust(test_data, G = round(N_SAMPLES / 5))
+    
+        # Get range of distribution, or -5 to 5 if distribution is inf to inf
+        eval_range_lower   = max(-5, berdev(dnum)$support[1])
+        eval_range_upper   = min(5 , berdev(dnum)$support[2])
+        eval_range         = seq(eval_range_lower, eval_range_upper, 0.01)
+    
+        low_density_eval_range = eval_range[(dberdev(eval_range, dnum) < 0.1)]
+        actual_density     = dberdev(low_density_eval_range, dnum = dnum)
+    
+        default_estimate_cor[run] = cor(actual_density, predict(default_estimate, low_density_eval_range), method = "spearman")    
+        K_0.01_estimate_cor[run]  = cor(actual_density, predict(K_0.01_estimate, low_density_eval_range), method = "spearman")
+        K_0.05_estimate_cor[run]  = cor(actual_density, predict(K_0.05_estimate, low_density_eval_range), method = "spearman")
+        K_0.1_estimate_cor[run]   = cor(actual_density, predict(K_0.1_estimate, low_density_eval_range), method = "spearman")
+        K_0.2_estimate_cor[run]   = cor(actual_density, predict(K_0.2_estimate, low_density_eval_range), method = "spearman")
+        
+        # Fit Alternative Density from KDE
+        np_density_estimate = npudens(npudensbw(test_data), tdat = test_data, edat = low_density_eval_range)
+        kde_estimate_cor[run]  = cor(actual_density, np_density_estimate$dens)
+        
+        #
+        k_choice = round(N_SAMPLES ^ (4/5))
+        knn_density_estimate = knn_density(test_data, low_density_eval_range, k_choice)
+        knn_estimate_cor[run] = cor(actual_density, knn_density_estimate, method = "spearman")
+    }
+    
+    png( sprintf("Low density rank cor mlust, density = %s n = %d runs = %d.png", berdev(dnum)$name, N_SAMPLES, RUNS_PER_DISTRIBUTION))
+    
+    df = data.frame(default_estimate_cor, K_0.01_estimate_cor, K_0.05_estimate_cor, K_0.1_estimate_cor, K_0.2_estimate_cor, kde_estimate_cor, knn_estimate_cor)
+    colnames(df) = c("Default", "K= 0.01N", "K= 0.05N", "K= 0.1N", "K= 0.2N", "cv-KDE (np)", sprintf("knn (k=%d)", k_choice))
+    
+    boxplot(df, ylim=c(0.5,1), main = sprintf("Low density rank cor mlust, density = %s n = %d runs = %d", berdev(dnum)$name, N_SAMPLES, RUNS_PER_DISTRIBUTION), cex.main = 0.75, cex.lab = 0.75, cex.axis = 0.65)
+    
+    dev.off()
+}
+
+```
+
+``` {r}
+
+BENCHDEN_DISTRIBUTIONS = c(2, 11, 12, 22, 24)
+N_SAMPLES  = 10000
+N_RUNS     = 30
+EVAL_RANGE = seq(-5,5,0.01)
+EVAL_RANGE_ALT = seq(0,5,0.01)
+K_CHOICE = round(N_SAMPLES ^ (4/5))
+
+
+cor_mclust_exponential    = rep(0,N_RUNS)
+cor_mclust_normal         = rep(0,N_RUNS)
+cor_mclust_lognormal      = rep(0,N_RUNS)
+cor_mclust_skewed_bimodal = rep(0,N_RUNS)
+cor_mclust_smooth_comb    = rep(0,N_RUNS)
+
+cor_np_exponential    = rep(0,N_RUNS)
+cor_np_normal         = rep(0,N_RUNS)
+cor_np_lognormal      = rep(0,N_RUNS)
+cor_np_skewed_bimodal = rep(0,N_RUNS)
+cor_np_smooth_comb    = rep(0,N_RUNS)
+
+cor_knn_exponential    = rep(0,N_RUNS)
+cor_knn_normal         = rep(0,N_RUNS)
+cor_knn_lognormal      = rep(0,N_RUNS)
+cor_knn_skewed_bimodal = rep(0,N_RUNS)
+cor_knn_smooth_comb    = rep(0,N_RUNS)
+
+for (i in 1:N_RUNS)
+{
+    message(i)
+    # Compute Actual Required Density Related Information
+    test_data_exponential       = rberdev(N_SAMPLES, dnum = 2)
+    test_data_normal            = rberdev(N_SAMPLES, dnum = 11)
+    test_data_lognormal         = rberdev(N_SAMPLES, dnum = 12)
+    test_data_skewed_bimodal    = rberdev(N_SAMPLES, dnum = 22)
+    test_data_smooth_comb       = rberdev(N_SAMPLES, dnum = 24)
+    
+    eval_range_exponential      = EVAL_RANGE_ALT[dberdev(EVAL_RANGE_ALT, 2) < 0.1]
+    eval_range_normal           = EVAL_RANGE[dberdev(EVAL_RANGE, 11) < 0.1]
+    eval_range_lognormal        = EVAL_RANGE_ALT[dberdev(EVAL_RANGE_ALT, 12) < 0.1]
+    eval_range_skewed_bimodal   = EVAL_RANGE[dberdev(EVAL_RANGE, 22) < 0.1]
+    eval_range_smooth_comb      = EVAL_RANGE[dberdev(EVAL_RANGE, 24) < 0.1]
+    
+    actual_range_exponential    = dberdev(eval_range_exponential, 2)
+    actual_range_normal         = dberdev(eval_range_normal, 11)
+    actual_range_lognormal      = dberdev(eval_range_lognormal, 12)
+    actual_range_skewed_bimodal = dberdev(eval_range_skewed_bimodal, 22)
+    actual_range_smooth_comb    = dberdev(eval_range_smooth_comb, 24)
+    
+    # Compute Estimates
+    mclust_exponential          = predict(densityMclust(test_data_exponential), eval_range_exponential)
+    mclust_normal               = predict(densityMclust(test_data_normal), eval_range_normal)
+    mclust_lognormal            = predict(densityMclust(test_data_lognormal), eval_range_lognormal)
+    mclust_skewed_bimodal       = predict(densityMclust(test_data_skewed_bimodal), eval_range_skewed_bimodal)
+    mclust_smooth_comb          = predict(densityMclust(test_data_smooth_comb), eval_range_smooth_comb)
+    
+    np_exponential              = npudens(npudensbw(test_data_exponential), tdat = test_data_exponential, edat = eval_range_exponential)$dens
+    np_normal                   = npudens(npudensbw(test_data_normal), tdat = test_data_normal, edat = eval_range_normal)$dens
+    np_lognormal                = npudens(npudensbw(test_data_lognormal), tdat = test_data_lognormal, edat = eval_range_lognormal)$dens
+    np_skewed_bimodal           = npudens(npudensbw(test_data_skewed_bimodal), tdat = test_data_skewed_bimodal, edat = eval_range_skewed_bimodal)$dens
+    np_smooth_comb              = npudens(npudensbw(test_data_smooth_comb), tdat = test_data_smooth_comb, edat = eval_range_smooth_comb)$dens
+    
+    knn_exponential             = knn_density(test_data_exponential, eval_range_exponential, K_CHOICE)
+    knn_normal                  = knn_density(test_data_normal, eval_range_normal, K_CHOICE)
+    knn_lognormal               = knn_density(test_data_lognormal, eval_range_lognormal, K_CHOICE)
+    knn_skewed_bimodal          = knn_density(test_data_skewed_bimodal, eval_range_skewed_bimodal, K_CHOICE) 
+    knn_smooth_comb             = knn_density(test_data_smooth_comb, eval_range_smooth_comb, K_CHOICE)
+    
+    # Compute Correlations
+    cor_mclust_exponential[i]    = cor(actual_range_exponential, mclust_exponential, method = "spearman")
+    cor_mclust_normal[i]         = cor(actual_range_normal, mclust_normal, method = "spearman")
+    cor_mclust_lognormal[i]      = cor(actual_range_lognormal, mclust_lognormal, method = "spearman")
+    cor_mclust_skewed_bimodal[i] = cor(actual_range_skewed_bimodal, mclust_skewed_bimodal, method = "spearman")
+    cor_mclust_smooth_comb[i]    = cor(actual_range_smooth_comb, mclust_smooth_comb, method = "spearman")
+    
+    cor_np_exponential[i]    = cor(actual_range_exponential, np_exponential, method = "spearman")
+    cor_np_normal[i]         = cor(actual_range_normal, np_normal, method = "spearman")
+    cor_np_lognormal[i]      = cor(actual_range_lognormal, np_lognormal, method = "spearman")
+    cor_np_skewed_bimodal[i] = cor(actual_range_skewed_bimodal, np_skewed_bimodal, method = "spearman")
+    cor_np_smooth_comb[i]    = cor(actual_range_smooth_comb, np_smooth_comb, method = "spearman")
+    
+    cor_knn_exponential[i]    = cor(actual_range_exponential, knn_exponential, method = "spearman")
+    cor_knn_normal[i]         = cor(actual_range_normal, knn_normal, method = "spearman")
+    cor_knn_lognormal[i]      = cor(actual_range_lognormal, knn_lognormal, method = "spearman")
+    cor_knn_skewed_bimodal[i] = cor(actual_range_skewed_bimodal, knn_skewed_bimodal, method = "spearman")
+    cor_knn_smooth_comb[i]    = cor(actual_range_smooth_comb, knn_smooth_comb, method = "spearman")
+}
+
+mclust_df  = data.frame(cor_mclust_exponential,cor_mclust_normal, cor_mclust_lognormal, cor_mclust_skewed_bimodal, cor_mclust_smooth_comb)
+np_df      = data.frame(cor_np_exponential,cor_np_normal, cor_np_lognormal, cor_np_skewed_bimodal, cor_np_smooth_comb)
+knn_df     = data.frame(cor_knn_exponential,cor_knn_normal, cor_knn_lognormal, cor_knn_skewed_bimodal, cor_knn_smooth_comb)
+
+    png(sprintf("Low Density Rank-Correlation Using MClust Summary, n=%d.png", N_SAMPLES))
+
+boxplot(mclust_df, main = "Low Density Rank-Correlation Using MClust", names = c("Expoenential","Normal","LogNormal","Skewed Bimodal","Smooth Comb"), cex.axis = 0.7, ylim = c(0.25,1))
+    title( sub = sprintf("Mclust Default, Runs = %d, N = %d", N_RUNS, N_SAMPLES))
+
+    dev.off()
+
+    png(sprintf("Low Density Rank-Correlation Using np Summary, n=%d.png", N_SAMPLES))
+        
+boxplot(np_df, main = "Low Density Rank-Correlation Using np", names = c("Expoenential","Normal","LogNormal","Skewed Bimodal","Smooth Comb"), cex.axis = 0.7, ylim = c(0.25,1))
+    title( sub = sprintf("Np Default, Runs = %d, N = %d", N_RUNS, N_SAMPLES))
+
+    dev.off()
+
+    png(sprintf("Low Density Rank-Correlation Using knn Summary, n=%d.png", N_SAMPLES))
+
+boxplot(knn_df, main = "Low Density Rank-Correlation Using KNN",  names = c("Expoenential","Normal","LogNormal","Skewed Bimodal","Smooth Comb"), cex.axis = 0.7, ylim = c(0.25,1))
+    title( sub = sprintf("KNN, k = %d,  Runs = %d, N = %d", K_CHOICE, N_RUNS, N_SAMPLES))
+
+    dev.off()
+
+
+```
+
+``` {r}
+
+BENCHDEN_DISTRIBUTIONS = c(2, 11, 12, 22, 24)
+N_SAMPLES  = 10000
+N_RUNS     = 30
+EVAL_RANGE = seq(-5,5,0.01)
+EVAL_RANGE_ALT = seq(0,5,0.01)
+K_CHOICE = round(N_SAMPLES ^ (4/5))
+
+
+cor_mclust_exponential    = rep(0,N_RUNS)
+cor_mclust_normal         = rep(0,N_RUNS)
+cor_mclust_lognormal      = rep(0,N_RUNS)
+cor_mclust_skewed_bimodal = rep(0,N_RUNS)
+cor_mclust_smooth_comb    = rep(0,N_RUNS)
+
+cor_np_exponential    = rep(0,N_RUNS)
+cor_np_normal         = rep(0,N_RUNS)
+cor_np_lognormal      = rep(0,N_RUNS)
+cor_np_skewed_bimodal = rep(0,N_RUNS)
+cor_np_smooth_comb    = rep(0,N_RUNS)
+
+cor_knn_exponential    = rep(0,N_RUNS)
+cor_knn_normal         = rep(0,N_RUNS)
+cor_knn_lognormal      = rep(0,N_RUNS)
+cor_knn_skewed_bimodal = rep(0,N_RUNS)
+cor_knn_smooth_comb    = rep(0,N_RUNS)
+
+for (i in 1:N_RUNS)
+{
+    message(i)
+    # Compute Actual Required Density Related Information
+    test_data_exponential       = rberdev(N_SAMPLES, dnum = 2)
+    test_data_normal            = rberdev(N_SAMPLES, dnum = 11)
+    test_data_lognormal         = rberdev(N_SAMPLES, dnum = 12)
+    test_data_skewed_bimodal    = rberdev(N_SAMPLES, dnum = 22)
+    test_data_smooth_comb       = rberdev(N_SAMPLES, dnum = 24)
+    
+    eval_range_exponential      = EVAL_RANGE_ALT[dberdev(EVAL_RANGE_ALT, 2) < 0.1]
+    eval_range_normal           = EVAL_RANGE[dberdev(EVAL_RANGE, 11) < 0.1]
+    eval_range_lognormal        = EVAL_RANGE_ALT[dberdev(EVAL_RANGE_ALT, 12) < 0.1]
+    eval_range_skewed_bimodal   = EVAL_RANGE[dberdev(EVAL_RANGE, 22) < 0.1]
+    eval_range_smooth_comb      = EVAL_RANGE[dberdev(EVAL_RANGE, 24) < 0.1]
+    
+    actual_range_exponential    = dberdev(eval_range_exponential, 2)
+    actual_range_normal         = dberdev(eval_range_normal, 11)
+    actual_range_lognormal      = dberdev(eval_range_lognormal, 12)
+    actual_range_skewed_bimodal = dberdev(eval_range_skewed_bimodal, 22)
+    actual_range_smooth_comb    = dberdev(eval_range_smooth_comb, 24)
+    
+    # Compute Estimates
+    mclust_exponential          = predict(densityMclust(test_data_exponential), eval_range_exponential)
+    mclust_normal               = predict(densityMclust(test_data_normal), eval_range_normal)
+    mclust_lognormal            = predict(densityMclust(test_data_lognormal), eval_range_lognormal)
+    mclust_skewed_bimodal       = predict(densityMclust(test_data_skewed_bimodal), eval_range_skewed_bimodal)
+    mclust_smooth_comb          = predict(densityMclust(test_data_smooth_comb), eval_range_smooth_comb)
+    
+    np_exponential              = npudens(npudensbw(test_data_exponential), tdat = test_data_exponential, edat = eval_range_exponential)$dens
+    np_normal                   = npudens(npudensbw(test_data_normal), tdat = test_data_normal, edat = eval_range_normal)$dens
+    np_lognormal                = npudens(npudensbw(test_data_lognormal), tdat = test_data_lognormal, edat = eval_range_lognormal)$dens
+    np_skewed_bimodal           = npudens(npudensbw(test_data_skewed_bimodal), tdat = test_data_skewed_bimodal, edat = eval_range_skewed_bimodal)$dens
+    np_smooth_comb              = npudens(npudensbw(test_data_smooth_comb), tdat = test_data_smooth_comb, edat = eval_range_smooth_comb)$dens
+    
+    knn_exponential             = knn_density(test_data_exponential, eval_range_exponential, K_CHOICE)
+    knn_normal                  = knn_density(test_data_normal, eval_range_normal, K_CHOICE)
+    knn_lognormal               = knn_density(test_data_lognormal, eval_range_lognormal, K_CHOICE)
+    knn_skewed_bimodal          = knn_density(test_data_skewed_bimodal, eval_range_skewed_bimodal, K_CHOICE) 
+    knn_smooth_comb             = knn_density(test_data_smooth_comb, eval_range_smooth_comb, K_CHOICE)
+    
+    # Compute Correlations
+    cor_mclust_exponential[i]    = cor(actual_range_exponential, mclust_exponential, method = "spearman")
+    cor_mclust_normal[i]         = cor(actual_range_normal, mclust_normal, method = "spearman")
+    cor_mclust_lognormal[i]      = cor(actual_range_lognormal, mclust_lognormal, method = "spearman")
+    cor_mclust_skewed_bimodal[i] = cor(actual_range_skewed_bimodal, mclust_skewed_bimodal, method = "spearman")
+    cor_mclust_smooth_comb[i]    = cor(actual_range_smooth_comb, mclust_smooth_comb, method = "spearman")
+    
+    cor_np_exponential[i]    = cor(actual_range_exponential, np_exponential, method = "spearman")
+    cor_np_normal[i]         = cor(actual_range_normal, np_normal, method = "spearman")
+    cor_np_lognormal[i]      = cor(actual_range_lognormal, np_lognormal, method = "spearman")
+    cor_np_skewed_bimodal[i] = cor(actual_range_skewed_bimodal, np_skewed_bimodal, method = "spearman")
+    cor_np_smooth_comb[i]    = cor(actual_range_smooth_comb, np_smooth_comb, method = "spearman")
+    
+    cor_knn_exponential[i]    = cor(actual_range_exponential, knn_exponential, method = "spearman")
+    cor_knn_normal[i]         = cor(actual_range_normal, knn_normal, method = "spearman")
+    cor_knn_lognormal[i]      = cor(actual_range_lognormal, knn_lognormal, method = "spearman")
+    cor_knn_skewed_bimodal[i] = cor(actual_range_skewed_bimodal, knn_skewed_bimodal, method = "spearman")
+    cor_knn_smooth_comb[i]    = cor(actual_range_smooth_comb, knn_smooth_comb, method = "spearman")
+}
+
+cor_df = data.frame(cor = numeric(), dist = character(), method = character(), stringsAsFactors = F)
+    cor_df = rbind(cor_df, data.frame( cor = cor_mclust_exponential, dist = rep("Exponential", N_RUNS), method = rep("mclust", N_RUNS)))
+    cor_df = rbind(cor_df, data.frame( cor = cor_mclust_normal, dist = rep("Normal", N_RUNS), method = rep("mclust", N_RUNS)))
+    cor_df = rbind(cor_df, data.frame( cor = cor_mclust_lognormal, dist = rep("Lognormal", N_RUNS), method = rep("mclust", N_RUNS)))
+    cor_df = rbind(cor_df, data.frame( cor = cor_mclust_skewed_bimodal, dist = rep("Skewed Bimodal", N_RUNS), method = rep("mclust", N_RUNS)))
+    cor_df = rbind(cor_df, data.frame( cor = cor_mclust_smooth_comb, dist = rep("Smooth Comb", N_RUNS), method = rep("mclust", N_RUNS)))
+
+    cor_df = rbind(cor_df, data.frame( cor = cor_np_exponential, dist = rep("Exponential", N_RUNS), method = rep("np", N_RUNS)))
+    cor_df = rbind(cor_df, data.frame( cor = cor_np_normal, dist = rep("Normal", N_RUNS), method = rep("np", N_RUNS)))
+    cor_df = rbind(cor_df, data.frame( cor = cor_np_lognormal, dist = rep("Lognormal", N_RUNS), method = rep("np", N_RUNS)))
+    cor_df = rbind(cor_df, data.frame( cor = cor_np_skewed_bimodal, dist = rep("Skewed Bimodal", N_RUNS), method = rep("np", N_RUNS)))
+    cor_df = rbind(cor_df, data.frame( cor = cor_np_smooth_comb, dist = rep("Smooth Comb", N_RUNS), method = rep("np", N_RUNS)))
+
+    cor_df = rbind(cor_df, data.frame( cor = cor_knn_exponential, dist = rep("Exponential", N_RUNS), method = rep("knn", N_RUNS)))
+    cor_df = rbind(cor_df, data.frame( cor = cor_knn_normal, dist = rep("Normal", N_RUNS), method = rep("knn", N_RUNS)))
+    cor_df = rbind(cor_df, data.frame( cor = cor_knn_lognormal, dist = rep("Lognormal", N_RUNS), method = rep("knn", N_RUNS)))
+    cor_df = rbind(cor_df, data.frame( cor = cor_knn_skewed_bimodal, dist = rep("Skewed Bimodal", N_RUNS), method = rep("knn", N_RUNS)))
+    cor_df = rbind(cor_df, data.frame( cor = cor_knn_smooth_comb, dist = rep("Smooth Comb", N_RUNS), method = rep("knn", N_RUNS)))
+
+p = ggplot(cor_df, aes(x=dist, y = cor, fill = method))
+p = p + geom_boxplot()
+p = p + theme_bw(base_size = 11) 
+p = p + coord_cartesian(ylim = c(0.5, 1)) 
+p = p + labs( title    = "Low density rank-correlations, by method and benchmark distribution")
+p = p + labs( subtitle = sprintf("N = %d, Runs  = %d, Knn K = %d", N_SAMPLES, N_RUNS, K_CHOICE))
+p
+
+
+```
+
+``` {r}
+
+BENCHDEN_DISTRIBUTIONS = c(2, 11, 12, 22, 24)
+N_SAMPLES  = 1000
+N_RUNS     = 30
+EVAL_RANGE = seq(-5,5,0.01)
+EVAL_RANGE_ALT = seq(0,5,0.01)
+
+K_CHOICE_100 = round(  N_SAMPLES ^ (4/5)  * 0.25)
+K_CHOICE_075 = round( (N_SAMPLES ^ (4/5)) * 0.15)
+K_CHOICE_050 = round( (N_SAMPLES ^ (4/5)) * 0.05)
+K_CHOICE_025 = round( (N_SAMPLES ^ (4/5)) * 0.01)
+
+cor_knn_100_exponential    = rep(0,N_RUNS)
+cor_knn_100_normal         = rep(0,N_RUNS)
+cor_knn_100_lognormal      = rep(0,N_RUNS)
+cor_knn_100_skewed_bimodal = rep(0,N_RUNS)
+cor_knn_100_smooth_comb    = rep(0,N_RUNS)
+
+cor_knn_075_exponential    = rep(0,N_RUNS)
+cor_knn_075_normal         = rep(0,N_RUNS)
+cor_knn_075_lognormal      = rep(0,N_RUNS)
+cor_knn_075_skewed_bimodal = rep(0,N_RUNS)
+cor_knn_075_smooth_comb    = rep(0,N_RUNS)
+
+cor_knn_050_exponential    = rep(0,N_RUNS)
+cor_knn_050_normal         = rep(0,N_RUNS)
+cor_knn_050_lognormal      = rep(0,N_RUNS)
+cor_knn_050_skewed_bimodal = rep(0,N_RUNS)
+cor_knn_050_smooth_comb    = rep(0,N_RUNS)
+
+cor_knn_025_exponential    = rep(0,N_RUNS)
+cor_knn_025_normal         = rep(0,N_RUNS)
+cor_knn_025_lognormal      = rep(0,N_RUNS)
+cor_knn_025_skewed_bimodal = rep(0,N_RUNS)
+cor_knn_025_smooth_comb    = rep(0,N_RUNS)
+
+for (i in 1:N_RUNS)
+{
+    message(i)
+    # Compute Actual Required Density Related Information
+    test_data_exponential       = rberdev(N_SAMPLES, dnum = 2)
+    test_data_normal            = rberdev(N_SAMPLES, dnum = 11)
+    test_data_lognormal         = rberdev(N_SAMPLES, dnum = 12)
+    test_data_skewed_bimodal    = rberdev(N_SAMPLES, dnum = 22)
+    test_data_smooth_comb       = rberdev(N_SAMPLES, dnum = 24)
+    
+    eval_range_exponential      = EVAL_RANGE_ALT[dberdev(EVAL_RANGE_ALT, 2) < 0.1]
+    eval_range_normal           = EVAL_RANGE[dberdev(EVAL_RANGE, 11) < 0.1]
+    eval_range_lognormal        = EVAL_RANGE_ALT[dberdev(EVAL_RANGE_ALT, 12) < 0.1]
+    eval_range_skewed_bimodal   = EVAL_RANGE[dberdev(EVAL_RANGE, 22) < 0.1]
+    eval_range_smooth_comb      = EVAL_RANGE[dberdev(EVAL_RANGE, 24) < 0.1]
+    
+    actual_range_exponential    = dberdev(eval_range_exponential, 2)
+    actual_range_normal         = dberdev(eval_range_normal, 11)
+    actual_range_lognormal      = dberdev(eval_range_lognormal, 12)
+    actual_range_skewed_bimodal = dberdev(eval_range_skewed_bimodal, 22)
+    actual_range_smooth_comb    = dberdev(eval_range_smooth_comb, 24)
+    
+    # Compute Estimates
+    knn_100_exponential             = knn_density(test_data_exponential, eval_range_exponential, K_CHOICE_100)
+    knn_100_normal                  = knn_density(test_data_normal, eval_range_normal, K_CHOICE_100)
+    knn_100_lognormal               = knn_density(test_data_lognormal, eval_range_lognormal, K_CHOICE_100)
+    knn_100_skewed_bimodal          = knn_density(test_data_skewed_bimodal, eval_range_skewed_bimodal, K_CHOICE_100) 
+    knn_100_smooth_comb             = knn_density(test_data_smooth_comb, eval_range_smooth_comb, K_CHOICE_100)
+
+    knn_075_exponential             = knn_density(test_data_exponential, eval_range_exponential, K_CHOICE_075)
+    knn_075_normal                  = knn_density(test_data_normal, eval_range_normal, K_CHOICE_075)
+    knn_075_lognormal               = knn_density(test_data_lognormal, eval_range_lognormal, K_CHOICE_075)
+    knn_075_skewed_bimodal          = knn_density(test_data_skewed_bimodal, eval_range_skewed_bimodal, K_CHOICE_075) 
+    knn_075_smooth_comb             = knn_density(test_data_smooth_comb, eval_range_smooth_comb, K_CHOICE_075)
+    
+    knn_050_exponential             = knn_density(test_data_exponential, eval_range_exponential, K_CHOICE_050)
+    knn_050_normal                  = knn_density(test_data_normal, eval_range_normal, K_CHOICE_050)
+    knn_050_lognormal               = knn_density(test_data_lognormal, eval_range_lognormal, K_CHOICE_050)
+    knn_050_skewed_bimodal          = knn_density(test_data_skewed_bimodal, eval_range_skewed_bimodal, K_CHOICE_050) 
+    knn_050_smooth_comb             = knn_density(test_data_smooth_comb, eval_range_smooth_comb, K_CHOICE_050)
+
+    knn_025_exponential             = knn_density(test_data_exponential, eval_range_exponential, K_CHOICE_025)
+    knn_025_normal                  = knn_density(test_data_normal, eval_range_normal, K_CHOICE_025)
+    knn_025_lognormal               = knn_density(test_data_lognormal, eval_range_lognormal, K_CHOICE_025)
+    knn_025_skewed_bimodal          = knn_density(test_data_skewed_bimodal, eval_range_skewed_bimodal, K_CHOICE_025) 
+    knn_025_smooth_comb             = knn_density(test_data_smooth_comb, eval_range_smooth_comb, K_CHOICE_025)
+    
+    
+    # Compute Correlations
+    cor_knn_100_exponential[i]    = cor(actual_range_exponential, knn_100_exponential, method = "spearman")
+    cor_knn_100_normal[i]         = cor(actual_range_normal, knn_100_normal, method = "spearman")
+    cor_knn_100_lognormal[i]      = cor(actual_range_lognormal, knn_100_lognormal, method = "spearman")
+    cor_knn_100_skewed_bimodal[i] = cor(actual_range_skewed_bimodal, knn_100_skewed_bimodal, method = "spearman")
+    cor_knn_100_smooth_comb[i]    = cor(actual_range_smooth_comb, knn_100_smooth_comb, method = "spearman")
+
+    cor_knn_075_exponential[i]    = cor(actual_range_exponential, knn_075_exponential, method = "spearman")
+    cor_knn_075_normal[i]         = cor(actual_range_normal, knn_075_normal, method = "spearman")
+    cor_knn_075_lognormal[i]      = cor(actual_range_lognormal, knn_075_lognormal, method = "spearman")
+    cor_knn_075_skewed_bimodal[i] = cor(actual_range_skewed_bimodal, knn_075_skewed_bimodal, method = "spearman")
+    cor_knn_075_smooth_comb[i]    = cor(actual_range_smooth_comb, knn_075_smooth_comb, method = "spearman")
+    
+    cor_knn_050_exponential[i]    = cor(actual_range_exponential, knn_050_exponential, method = "spearman")
+    cor_knn_050_normal[i]         = cor(actual_range_normal, knn_050_normal, method = "spearman")
+    cor_knn_050_lognormal[i]      = cor(actual_range_lognormal, knn_050_lognormal, method = "spearman")
+    cor_knn_050_skewed_bimodal[i] = cor(actual_range_skewed_bimodal, knn_050_skewed_bimodal, method = "spearman")
+    cor_knn_050_smooth_comb[i]    = cor(actual_range_smooth_comb, knn_050_smooth_comb, method = "spearman")
+
+    cor_knn_025_exponential[i]    = cor(actual_range_exponential, knn_025_exponential, method = "spearman")
+    cor_knn_025_normal[i]         = cor(actual_range_normal, knn_025_normal, method = "spearman")
+    cor_knn_025_lognormal[i]      = cor(actual_range_lognormal, knn_025_lognormal, method = "spearman")
+    cor_knn_025_skewed_bimodal[i] = cor(actual_range_skewed_bimodal, knn_025_skewed_bimodal, method = "spearman")
+    cor_knn_025_smooth_comb[i]    = cor(actual_range_smooth_comb, knn_025_smooth_comb, method = "spearman")
+}
+
+cor_df = data.frame(cor = numeric(), dist = character(), method = character(), stringsAsFactors = F)
+    cor_df = rbind(cor_df, data.frame( cor = cor_knn_100_exponential, dist = rep("Exponential", N_RUNS), method = rep("knn 100", N_RUNS)))
+    cor_df = rbind(cor_df, data.frame( cor = cor_knn_100_normal, dist = rep("Normal", N_RUNS), method = rep("knn 100", N_RUNS)))
+    cor_df = rbind(cor_df, data.frame( cor = cor_knn_100_lognormal, dist = rep("Lognormal", N_RUNS), method = rep("knn 100", N_RUNS)))
+    cor_df = rbind(cor_df, data.frame( cor = cor_knn_100_skewed_bimodal, dist = rep("Skewed Bimodal", N_RUNS), method = rep("knn 100", N_RUNS)))
+    cor_df = rbind(cor_df, data.frame( cor = cor_knn_100_smooth_comb, dist = rep("Smooth Comb", N_RUNS), method = rep("knn 100", N_RUNS)))
+
+    cor_df = rbind(cor_df, data.frame( cor = cor_knn_075_exponential, dist = rep("Exponential", N_RUNS), method = rep("knn 075", N_RUNS)))
+    cor_df = rbind(cor_df, data.frame( cor = cor_knn_075_normal, dist = rep("Normal", N_RUNS), method = rep("knn 075", N_RUNS)))
+    cor_df = rbind(cor_df, data.frame( cor = cor_knn_075_lognormal, dist = rep("Lognormal", N_RUNS), method = rep("knn 075", N_RUNS)))
+    cor_df = rbind(cor_df, data.frame( cor = cor_knn_075_skewed_bimodal, dist = rep("Skewed Bimodal", N_RUNS), method = rep("knn 075", N_RUNS)))
+    cor_df = rbind(cor_df, data.frame( cor = cor_knn_075_smooth_comb, dist = rep("Smooth Comb", N_RUNS), method = rep("knn 075", N_RUNS)))
+
+    cor_df = rbind(cor_df, data.frame( cor = cor_knn_050_exponential, dist = rep("Exponential", N_RUNS), method = rep("knn 050", N_RUNS)))
+    cor_df = rbind(cor_df, data.frame( cor = cor_knn_050_normal, dist = rep("Normal", N_RUNS), method = rep("knn 050", N_RUNS)))
+    cor_df = rbind(cor_df, data.frame( cor = cor_knn_050_lognormal, dist = rep("Lognormal", N_RUNS), method = rep("knn 050", N_RUNS)))
+    cor_df = rbind(cor_df, data.frame( cor = cor_knn_050_skewed_bimodal, dist = rep("Skewed Bimodal", N_RUNS), method = rep("knn 050", N_RUNS)))
+    cor_df = rbind(cor_df, data.frame( cor = cor_knn_050_smooth_comb, dist = rep("Smooth Comb", N_RUNS), method = rep("knn 050", N_RUNS)))
+
+    cor_df = rbind(cor_df, data.frame( cor = cor_knn_025_exponential, dist = rep("Exponential", N_RUNS), method = rep("knn 025", N_RUNS)))
+    cor_df = rbind(cor_df, data.frame( cor = cor_knn_025_normal, dist = rep("Normal", N_RUNS), method = rep("knn 025", N_RUNS)))
+    cor_df = rbind(cor_df, data.frame( cor = cor_knn_025_lognormal, dist = rep("Lognormal", N_RUNS), method = rep("knn 025", N_RUNS)))
+    cor_df = rbind(cor_df, data.frame( cor = cor_knn_025_skewed_bimodal, dist = rep("Skewed Bimodal", N_RUNS), method = rep("knn 025", N_RUNS)))
+    cor_df = rbind(cor_df, data.frame( cor = cor_knn_025_smooth_comb, dist = rep("Smooth Comb", N_RUNS), method = rep("knn 025", N_RUNS)))
+
+p = ggplot(cor_df, aes(x=dist, y = cor, fill = method))
+p = p + geom_boxplot()
+p = p + theme_bw(base_size = 11) 
+p = p + coord_cartesian(ylim = c(0.5, 1)) 
+p = p + labs( title    = "Low density rank-correlations, by method and benchmark distribution")
+p = p + labs( subtitle = sprintf("N = %d, Runs  = %d, Knn (K 100 = %d) (K 075 = %d) (K 050 = %d) (K 025 = %d)", N_SAMPLES, N_RUNS, K_CHOICE_100, K_CHOICE_075, K_CHOICE_050, K_CHOICE_025))
+p
+
+
+```
+
+
+``` {r}
+N_SAMPLES = 1000
+
+EVAL_RANGE = seq(-5,5,0.005)
+
+K_CHOICE_100 = round(  N_SAMPLES ^ (4/5)  * 0.25)
+K_CHOICE_075 = round( (N_SAMPLES ^ (4/5)) * 0.15  )
+K_CHOICE_050 = round( (N_SAMPLES ^ (4/5)) * 0.05  )
+K_CHOICE_025 = round( (N_SAMPLES ^ (4/5)) * 0.01  )
+
+test_data_skewed_bimodal    = rberdev(N_SAMPLES, dnum = 22)
+test_data_smooth_comb       = rberdev(N_SAMPLES, dnum = 24)
+
+knn_100_skewed_bimodal          = knn_density(test_data_skewed_bimodal, EVAL_RANGE, K_CHOICE_100) 
+knn_100_smooth_comb             = knn_density(test_data_smooth_comb, EVAL_RANGE, K_CHOICE_100)
+
+knn_075_skewed_bimodal          = knn_density(test_data_skewed_bimodal, EVAL_RANGE, K_CHOICE_075) 
+knn_075_smooth_comb             = knn_density(test_data_smooth_comb, EVAL_RANGE, K_CHOICE_075)
+
+knn_050_skewed_bimodal          = knn_density(test_data_skewed_bimodal, EVAL_RANGE, K_CHOICE_050) 
+knn_050_smooth_comb             = knn_density(test_data_smooth_comb, EVAL_RANGE, K_CHOICE_050)
+
+knn_025_skewed_bimodal          = knn_density(test_data_skewed_bimodal, EVAL_RANGE, K_CHOICE_025) 
+knn_025_smooth_comb             = knn_density(test_data_smooth_comb, EVAL_RANGE, K_CHOICE_025)
+
+plot(EVAL_RANGE, dberdev(EVAL_RANGE, dnum = 22), type = "l" )
+    lines(EVAL_RANGE, knn_100_skewed_bimodal, col = "red")
+    lines(EVAL_RANGE, knn_075_skewed_bimodal, col = "blue")
+    lines(EVAL_RANGE, knn_050_skewed_bimodal, col = "green")
+    lines(EVAL_RANGE, knn_025_skewed_bimodal, col = "purple")
+    legend("topleft", col = c("red","blue","green", "purple"), legend = c("K 100", "K 75", "K 50", "K 25"), lty = 1)
+    title(sub = sprintf("N = %d, Knn (K 100 = %d) (K 075 = %d) (K 050 = %d) (K 025 = %d)", N_SAMPLES, K_CHOICE_100, K_CHOICE_075, K_CHOICE_050, K_CHOICE_025))
+
+plot(EVAL_RANGE, dberdev(EVAL_RANGE, dnum = 24), type = "l" )
+    lines(EVAL_RANGE, knn_100_smooth_comb, col = "red")
+    lines(EVAL_RANGE, knn_075_smooth_comb, col = "blue")
+    lines(EVAL_RANGE, knn_050_smooth_comb, col = "green")
+    lines(EVAL_RANGE, knn_025_smooth_comb, col = "purple")
+    legend("topleft", col = c("red","blue","green", "purple"), legend = c("K 100", "K 75", "K 50", "K 25"), lty = 1)
+    title(sub = sprintf("N = %d, Knn (K 100 = %d) (K 075 = %d) (K 050 = %d) (K 025 = %d)", N_SAMPLES, K_CHOICE_100, K_CHOICE_075, K_CHOICE_050, K_CHOICE_025))
+
+
+
+```

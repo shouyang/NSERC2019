@@ -1,0 +1,186 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+``` {r setup}
+library(benchden)
+library(FNN)
+vol_hypersphere = function(r = 1, d = 1) {
+    nom   = pi ^ (d/2)
+    denom = gamma(d/2 + 1)
+    
+    unit_vol = nom / denom
+    
+    return ( unit_vol * (r ^ d) )
+}
+knn_density = function(data, query, k = 2)
+{
+    n = dim(t(t(data)))[1]
+    d = dim(t(t(data)))[2]
+    k = round(k)
+    
+    
+    radius_per_query  = apply(knnx.dist(data, query, k = k), 1 ,max)
+    density_per_query = (k/n) * (1 / vol_hypersphere(radius_per_query, d = d))
+    
+    return (density_per_query)
+}
+```
+
+``` {r Checking quality of estimates using varing k, eval=FALSE}
+N_SAMPLES          = 100
+TEST_DISTRIBUTIONS =  c(2, 11, 12, 22, 24)
+EVAL_RANGE         = seq(-5,5, 0.01)  
+for (dnum in TEST_DISTRIBUTIONS)
+{
+     test_data = rberdev(N_SAMPLES, dnum)   
+    
+     actual_density = dberdev(EVAL_RANGE, dnum)
+     
+     
+     k_100 =  N_SAMPLES ^ (4/5)
+     k_75  =  k_100 * 0.75
+     k_50  =  k_100 * 0.50
+     k_25  =  k_100 * 0.25
+     knn_100_estimate = knn_density(test_data, EVAL_RANGE, k_100)
+     knn_075_estimate = knn_density(test_data, EVAL_RANGE, k_75)
+     knn_050_estimate = knn_density(test_data, EVAL_RANGE, k_50)
+     knn_025_estimate = knn_density(test_data, EVAL_RANGE, k_25)
+    
+     average_estimate = (knn_100_estimate + knn_075_estimate + knn_050_estimate + knn_025_estimate) / 4
+     
+     png(sprintf("dist = %s, n = %d.png", berdev(dnum)$name, N_SAMPLES, round(k_100)))
+     
+     plot(EVAL_RANGE, actual_density, type = "l", main = "Knn density estimates varing K")
+        lines(EVAL_RANGE, knn_100_estimate, col = "red")
+        lines(EVAL_RANGE, knn_075_estimate, col = "blue")
+        lines(EVAL_RANGE, knn_050_estimate, col = "green")
+        lines(EVAL_RANGE, knn_025_estimate, col = "purple")
+        lines(EVAL_RANGE, average_estimate, col = "yellow")
+        lines(EVAL_RANGE, actual_density)
+        legend("topleft", legend = c("Actual", "k_base = n ^ 4/5 ", "k_base * 0.75", "k_base * 0.5", "k_base * 0.25", "avg est" ), col = c("black", "red", "blue", "green", "purple" , "yellow"), lty = 1)
+        
+        title( cex.sub = 0.75, sub = sprintf("dist = %s, n = %d, k_base = %d", berdev(dnum)$name, N_SAMPLES, round(k_100)))
+    
+    dev.off()
+    }
+```
+
+``` {r}
+N_SAMPLES          = 10000
+N_RUNS             = 100
+TEST_DISTRIBUTIONS =  c(2, 11, 12, 22, 24)
+    
+k_100_cor = rep(0, N_RUNS)
+k_075_cor = rep(0, N_RUNS)
+k_050_cor = rep(0, N_RUNS)
+k_025_cor = rep(0, N_RUNS)
+average_estimate_cor = rep(0, N_RUNS)
+for (dnum in TEST_DISTRIBUTIONS) {
+    for (run in 1: N_RUNS) {
+        eval_range_lower   = max(-5, berdev(dnum)$support[1])
+        eval_range_upper   = min(5 , berdev(dnum)$support[2])
+        eval_range         = seq(eval_range_lower, eval_range_upper, 0.01)
+    
+        low_density_eval_range          = eval_range[(dberdev(eval_range, dnum) < 0.1)]
+        low_density_actual_density      = dberdev(low_density_eval_range, dnum = dnum)
+        
+        test_data = rberdev(N_SAMPLES, dnum)
+        
+
+        
+        k_100 =  N_SAMPLES ^ (4/5)
+        k_75  =  k_100 * 0.75
+        k_50  =  k_100 * 0.50
+        k_25  =  k_100 * 0.25
+    
+        knn_100_estimate = knn_density(test_data, low_density_eval_range, k_100)
+        knn_075_estimate = knn_density(test_data, low_density_eval_range, k_75)
+        knn_050_estimate = knn_density(test_data, low_density_eval_range, k_50)
+        knn_025_estimate = knn_density(test_data, low_density_eval_range, k_25)
+        
+        average_estimate = (knn_100_estimate + knn_075_estimate + knn_050_estimate + knn_025_estimate) / 4
+     
+        k_100_cor[run] = cor(knn_100_estimate, low_density_actual_density, method = "spearman")
+        k_075_cor[run] = cor(knn_075_estimate, low_density_actual_density, method = "spearman")
+        k_050_cor[run] = cor(knn_050_estimate, low_density_actual_density, method = "spearman")
+        k_025_cor[run] = cor(knn_025_estimate, low_density_actual_density, method = "spearman")
+        average_estimate_cor[run] = cor(average_estimate, low_density_actual_density, method = "spearman")
+    }
+    df = data.frame(k_100_cor,k_075_cor,k_050_cor,k_025_cor,average_estimate_cor)
+    
+    png( sprintf("Rank Correlations KNN, dist = %s, runs = %d, n = %d, k_base = %d.png",berdev(dnum)$name,N_RUNS, N_SAMPLES, round(k_100)))
+    
+    boxplot(df, cex.sub = 0.7, cex.axis = 0.7, cex.lab = 0.7, ylim = c(0.5,1), main = "Rank correlations of KNN varing K from k_100")
+    title( cex.sub = 0.75, sub = sprintf("dist = %s, runs = %d, n = %d, k_base = %d", berdev(dnum)$name,N_RUNS, N_SAMPLES, round(k_100)))
+    dev.off()
+}
+```
+
+``` {r}
+N_SAMPLES          = 10000
+N_RUNS             = 100
+TEST_DISTRIBUTIONS =  c(2, 11, 12, 22, 24)
+    
+k_100_diff = rep(0, N_RUNS)
+k_075_diff = rep(0, N_RUNS)
+k_050_diff = rep(0, N_RUNS)
+k_025_diff = rep(0, N_RUNS)
+average_estimate_diff = rep(0, N_RUNS)
+k_100_diff_scaled = rep(0, N_RUNS)
+k_075_diff_scaled = rep(0, N_RUNS)
+k_050_diff_scaled = rep(0, N_RUNS)
+k_025_diff_scaled = rep(0, N_RUNS)
+average_estimate_diff_scaled = rep(0, N_RUNS)
+for (dnum in TEST_DISTRIBUTIONS) {
+    for (run in 1: N_RUNS) {
+        eval_range_lower   = max(-5, berdev(dnum)$support[1])
+        eval_range_upper   = min(5 , berdev(dnum)$support[2])
+        eval_range         = seq(eval_range_lower, eval_range_upper, 0.01)
+    
+        low_density_eval_range          = eval_range[(pberdev(eval_range, dnum) < 0.1)]
+        low_density_actual_density     = dberdev(low_density_eval_range, dnum = dnum)
+        
+        test_data = rberdev(N_SAMPLES, dnum)
+        
+        k_100 =  N_SAMPLES ^ (4/5)
+        k_75  =  k_100 * 0.75
+        k_50  =  k_100 * 0.50
+        k_25  =  k_100 * 0.25
+    
+        knn_100_estimate = knn_density(test_data, low_density_eval_range, k_100)
+        knn_075_estimate = knn_density(test_data, low_density_eval_range, k_75)
+        knn_050_estimate = knn_density(test_data, low_density_eval_range, k_50)
+        knn_025_estimate = knn_density(test_data, low_density_eval_range, k_25)
+        
+        average_estimate = (knn_100_estimate + knn_075_estimate + knn_050_estimate + knn_025_estimate) / 4
+     
+        
+        k_100_diff[run] = mean( (knn_100_estimate - low_density_actual_density) ^ 2 )
+        k_075_diff[run] = mean( (knn_075_estimate - low_density_actual_density) ^ 2 )
+        k_050_diff[run] = mean( (knn_050_estimate - low_density_actual_density) ^ 2 )
+        k_025_diff[run] = mean( (knn_025_estimate - low_density_actual_density) ^ 2 ) 
+        average_estimate_diff[run] = mean( (average_estimate - low_density_actual_density) ^ 2)
+        k_100_diff_scaled[run] = mean( (knn_100_estimate - low_density_actual_density) ^ 2 ) / mean(low_density_actual_density ^ 2)
+        k_075_diff_scaled[run] = mean( (knn_075_estimate - low_density_actual_density) ^ 2 ) / mean(low_density_actual_density ^ 2)
+        k_050_diff_scaled[run] = mean( (knn_050_estimate - low_density_actual_density) ^ 2 ) / mean(low_density_actual_density ^ 2)
+        k_025_diff_scaled[run] = mean( (knn_025_estimate - low_density_actual_density) ^ 2 ) / mean(low_density_actual_density ^ 2)
+        average_estimate_diff_scaled[run] = mean( (average_estimate - low_density_actual_density) ^ 2)  / mean(low_density_actual_density ^ 2)
+        }
+    df = data.frame(k_100_diff,k_075_diff,k_050_diff,k_025_diff,average_estimate_diff)
+    
+    png( sprintf("Mean Differences (unscaled) KNN, dist = %s, runs = %d, n = %d, k_base = %d.png",berdev(dnum)$name,N_RUNS, N_SAMPLES, round(k_100)))
+    
+    boxplot(df, cex.sub = 0.7, cex.axis = 0.65, cex.lab = 0.5, main = "Mean Differences (unscaled) KNN varing K from k_100")
+    title( cex.sub = 0.75, sub = sprintf("dist = %s, runs = %d, n = %d, k_base = %d", berdev(dnum)$name,N_RUNS, N_SAMPLES, round(k_100)))
+    dev.off()
+    
+    df = data.frame(k_100_diff_scaled,k_075_diff_scaled,k_050_diff_scaled,k_025_diff_scaled,average_estimate_diff_scaled)
+    
+    png( sprintf("Mean Differences (scaled) KNN, dist = %s, runs = %d, n = %d, k_base = %d.png",berdev(dnum)$name,N_RUNS, N_SAMPLES, round(k_100)))
+    
+    boxplot(df, cex.sub = 0.7, cex.axis = 0.65, cex.lab = 0.5, main = "Mean Differences (scaled) KNN varing k from k_100")
+    title( cex.sub = 0.75, sub = sprintf("dist = %s, runs = %d, n = %d, k_base = %d", berdev(dnum)$name,N_RUNS, N_SAMPLES, round(k_100)))
+    dev.off()
+}
+```
