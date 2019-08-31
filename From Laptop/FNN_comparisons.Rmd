@@ -1,0 +1,304 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+``` {r setup}
+library("FNN")
+library("mclust")
+library("np")
+library("benchden")
+library("mnormt")
+
+vol_hypersphere = function(r = 1, d = 1) {
+
+    nom   = pi ^ (d/2)
+    denom = gamma(d/2 + 1)
+    
+    unit_vol = nom / denom
+    
+    return ( unit_vol * (r ^ d) )
+}
+
+knn_density = function(data, query, k = 2)
+{
+    n = dim(t(t(data)))[1]
+    d = dim(t(t(data)))[2]
+    
+    radius_per_query  = apply(knnx.dist(data, query, k = k), 1 ,max)
+    density_per_query = (k/n) * (1 / vol_hypersphere(radius_per_query, d = d))
+    
+    return (density_per_query)
+}
+```
+
+``` {r eval = FALSE}
+N_SAMPLES = 100
+N_RUNS    = 10
+EVAL_RANGE_AXIS = c(seq(-5, -1, 0.1), seq(1,5,0.1))
+EVAL_RANGE      = expand.grid(EVAL_RANGE_AXIS, EVAL_RANGE_AXIS)
+
+means = c(0,0)
+covar = matrix(c(1,0,0,1), 2, 2)
+
+
+
+# == 
+cor_knn         = rep(0, N_RUNS)
+cor_np_cvml     = rep(0, N_RUNS)
+cor_np_rule     = rep(0, N_RUNS) 
+cor_mclust      = rep(0, N_RUNS)
+
+for (i in 1:N_RUNS) {
+    test_data = rmnorm(N_SAMPLES, means , covar)
+    actual_density = dmnorm(EVAL_RANGE, means, covar)
+    
+    # KNN Based
+    knn_est = knn_density(test_data, EVAL_RANGE, k = round(N_SAMPLES ^ 0.8))
+    
+    # Np Based
+    np_cvml_bw  = npudensbw(dat = test_data, bwmethod = "cv.ml", bwtype = "fixed", ckertype="gaussian")
+    np_cvml_est = npudens(np_cvml_bw, tdat = test_data, edat = EVAL_RANGE)$dens
+    
+    np_rule_bw  = npudensbw(dat = test_data, bwmethod = "normal-reference", bwtype = "fixed", ckertype="gaussian")
+    np_rule_est = npudens(np_rule_bw, tdat = test_data, edat = EVAL_RANGE)$dens
+
+    # MClust Based
+    mclust_model = densityMclust(test_data, G = 1:20)
+    mclust_est  = predict(mclust_model, EVAL_RANGE)
+    
+    cor_knn[i]         = cor(knn_est, actual_density, method = "spearman")
+    cor_np_cvml[i]     = cor(np_cvml_est, actual_density, method = "spearman")
+    cor_np_rule[i]     = cor(np_rule_est, actual_density, method = "spearman")
+    cor_mclust[i]      = cor(mclust_est, actual_density, method = "spearman")
+}
+cor_df = data.frame(cor_knn, cor_np_cvml, cor_np_rule, cor_mclust)
+
+png("N=10000.png")
+
+boxplot(cor_df, main = sprintf("N = %d, Dem = 2", N_SAMPLES)
+        ,xlab =  sprintf("(mclust g = %d, model = %s) (knn k = %d) \n (np cvml_bw = %f-%f rule_bw = %f-%f)", mclust_model$G, mclust_model$modelName, round(N_SAMPLES ^ 0.8), np_cvml_bw$bw[1], np_cvml_bw$bw[2], np_rule_bw$bw[1], np_rule_bw$bw[2])
+        , cex = 0.01)
+
+dev.off()
+
+```
+
+``` {r}
+N_SAMPLES = 100
+N_RUNS    = 30
+EVAL_RANGE_AXIS = c(seq(-5, -1, 0.1), seq(1,5,0.1))
+EVAL_RANGE      = expand.grid(EVAL_RANGE_AXIS, EVAL_RANGE_AXIS)
+
+means = c(0,0)
+covar = matrix(c(1,0,0,1), 2, 2)
+
+
+# == 
+diff_knn         = rep(0, N_RUNS)
+diff_np_cvml     = rep(0, N_RUNS)
+diff_np_rule     = rep(0, N_RUNS) 
+diff_mclust      = rep(0, N_RUNS)
+
+diff_knn_scaled         = rep(0, N_RUNS)
+diff_np_cvml_scaled     = rep(0, N_RUNS)
+diff_np_rule_scaled     = rep(0, N_RUNS) 
+diff_mclust_scaled      = rep(0, N_RUNS)
+
+for (i in 1:N_RUNS) {
+    message(i)
+    test_data = rmnorm(N_SAMPLES, means , covar)
+    actual_density = dmnorm(EVAL_RANGE, means, covar)
+    
+    # KNN Based
+    knn_est = knn_density(test_data, EVAL_RANGE, k = round(N_SAMPLES ^ 0.8))
+    
+    # Np Based
+    np_cvml_bw  = npudensbw(dat = test_data, bwmethod = "cv.ml", bwtype = "fixed", ckertype="gaussian")
+    np_cvml_est = npudens(np_cvml_bw, tdat = test_data, edat = EVAL_RANGE)$dens
+    
+    np_rule_bw  = npudensbw(dat = test_data, bwmethod = "normal-reference", bwtype = "fixed", ckertype="gaussian")
+    np_rule_est = npudens(np_rule_bw, tdat = test_data, edat = EVAL_RANGE)$dens
+
+    # MClust Based
+    mclust_model = densityMclust(test_data, G = 1:20)
+    mclust_est   = predict(mclust_model, EVAL_RANGE)
+    
+    diff_knn[i]         = mean( (knn_est - actual_density) ^ 2)
+    diff_np_cvml[i]     = mean( (np_cvml_est - actual_density) ^ 2)
+    diff_np_rule[i]     = mean( (np_rule_est - actual_density) ^ 2)
+    diff_mclust[i]      = mean( (mclust_est - actual_density) ^ 2)
+
+    diff_knn_scaled[i]         = mean( (knn_est - actual_density) ^ 2) / mean(actual_density ^ 2)
+    diff_np_cvml_scaled[i]     = mean( (np_cvml_est - actual_density) ^ 2) / mean(actual_density ^ 2)
+    diff_np_rule_scaled[i]     = mean( (np_rule_est - actual_density) ^ 2) / mean(actual_density ^ 2)
+    diff_mclust_scaled[i]      = mean( (mclust_est - actual_density) ^ 2) / mean(actual_density ^ 2)
+}
+diff_df = data.frame(diff_knn, diff_np_cvml, diff_np_rule, diff_mclust)
+diff_scaled_df = data.frame(diff_knn_scaled, diff_np_cvml_scaled, diff_np_rule_scaled, diff_mclust_scaled)
+
+        png(sprintf("Mean Sq-Diff of KDE estimates (unscaled) n = %d.png", N_SAMPLES))
+
+boxplot(diff_df, main = sprintf(" Mean Sq-Diff of KDE estimates and actual on EVAL Grid N = %d, Dem = 2", N_SAMPLES)
+        ,xlab =  sprintf("(mclust g = %d, model = %s) (knn k = %d) \n (np cvml_bw = %f-%f rule_bw = %f-%f)"
+        ,mclust_model$G, mclust_model$modelName, round(N_SAMPLES ^ 0.8), np_cvml_bw$bw[1], np_cvml_bw$bw[2], np_rule_bw$bw[1], np_rule_bw$bw[2])
+        ,ylab = " mean(diff-sq ^ 2)", cex.main = 0.8, cex.axis = 0.8, cex.lab = 0.8)
+
+        dev.off()
+
+        png(sprintf("Mean Sq-Diff of KDE estimates (scaled) n = %d.png", N_SAMPLES))
+        
+        
+boxplot(diff_scaled_df, main = sprintf(" Mean Sq-Diff of KDE estimates and actual on EVAL Grid N = %d, Dem = 2", N_SAMPLES)
+        ,xlab =  sprintf("(mclust g = %d, model = %s) (knn k = %d) \n (np cvml_bw = %f-%f rule_bw = %f-%f)"
+        ,mclust_model$G, mclust_model$modelName, round(N_SAMPLES ^ 0.8), np_cvml_bw$bw[1], np_cvml_bw$bw[2], np_rule_bw$bw[1], np_rule_bw$bw[2])
+        ,ylab = " mean(diff-sq ^ 2) / mean(actual ^ 2)",ylim = c(0,3), cex.main = 0.8, cex.axis = 0.8, cex.lab = 0.8)
+
+        dev.off()
+```
+
+``` {r}
+N_SAMPLES = 1000
+N_RUNS    = 30
+EVAL_RANGE_AXIS = c(seq(-5, -1, 0.1), seq(1,5,0.1))
+EVAL_RANGE      = expand.grid(EVAL_RANGE_AXIS, EVAL_RANGE_AXIS)
+
+means = c(0,0)
+covar = matrix(c(1,0,0,1), 2, 2)
+
+
+# == 
+diff_knn         = rep(0, N_RUNS)
+diff_np_cvml     = rep(0, N_RUNS)
+diff_np_rule     = rep(0, N_RUNS) 
+diff_mclust      = rep(0, N_RUNS)
+
+diff_knn_scaled         = rep(0, N_RUNS)
+diff_np_cvml_scaled     = rep(0, N_RUNS)
+diff_np_rule_scaled     = rep(0, N_RUNS) 
+diff_mclust_scaled      = rep(0, N_RUNS)
+
+for (i in 1:N_RUNS) {
+    message(i)
+    test_data = rmnorm(N_SAMPLES, means , covar)
+    actual_density = dmnorm(EVAL_RANGE, means, covar)
+    
+    # KNN Based
+    knn_est = knn_density(test_data, EVAL_RANGE, k = round(N_SAMPLES ^ 0.8))
+    
+    # Np Based
+    np_cvml_bw  = npudensbw(dat = test_data, bwmethod = "cv.ml", bwtype = "fixed", ckertype="gaussian")
+    np_cvml_est = npudens(np_cvml_bw, tdat = test_data, edat = EVAL_RANGE)$dens
+    
+    np_rule_bw  = npudensbw(dat = test_data, bwmethod = "normal-reference", bwtype = "fixed", ckertype="gaussian")
+    np_rule_est = npudens(np_rule_bw, tdat = test_data, edat = EVAL_RANGE)$dens
+
+    # MClust Based
+    mclust_model = densityMclust(test_data, G = 1:20)
+    mclust_est   = predict(mclust_model, EVAL_RANGE)
+    
+    diff_knn[i]         = mean( (knn_est - actual_density) ^ 2)
+    diff_np_cvml[i]     = mean( (np_cvml_est - actual_density) ^ 2)
+    diff_np_rule[i]     = mean( (np_rule_est - actual_density) ^ 2)
+    diff_mclust[i]      = mean( (mclust_est - actual_density) ^ 2)
+
+    diff_knn_scaled[i]         = mean( (knn_est - actual_density) ^ 2) / mean(actual_density ^ 2)
+    diff_np_cvml_scaled[i]     = mean( (np_cvml_est - actual_density) ^ 2) / mean(actual_density ^ 2)
+    diff_np_rule_scaled[i]     = mean( (np_rule_est - actual_density) ^ 2) / mean(actual_density ^ 2)
+    diff_mclust_scaled[i]      = mean( (mclust_est - actual_density) ^ 2) / mean(actual_density ^ 2)
+}
+diff_df = data.frame(diff_knn, diff_np_cvml, diff_np_rule, diff_mclust)
+diff_scaled_df = data.frame(diff_knn_scaled, diff_np_cvml_scaled, diff_np_rule_scaled, diff_mclust_scaled)
+
+        png(sprintf("Mean Sq-Diff of KDE estimates (unscaled) n = %d.png", N_SAMPLES))
+
+boxplot(diff_df, main = sprintf(" Mean Sq-Diff of KDE estimates and actual on EVAL Grid N = %d, Dem = 2", N_SAMPLES)
+        ,xlab =  sprintf("(mclust g = %d, model = %s) (knn k = %d) \n (np cvml_bw = %f-%f rule_bw = %f-%f)"
+        ,mclust_model$G, mclust_model$modelName, round(N_SAMPLES ^ 0.8), np_cvml_bw$bw[1], np_cvml_bw$bw[2], np_rule_bw$bw[1], np_rule_bw$bw[2])
+        ,ylab = " mean(diff-sq ^ 2)", cex.main = 0.8, cex.axis = 0.8, cex.lab = 0.8)
+
+        dev.off()
+
+        png(sprintf("Mean Sq-Diff of KDE estimates (scaled) n = %d.png", N_SAMPLES))
+        
+        
+boxplot(diff_scaled_df, main = sprintf(" Mean Sq-Diff of KDE estimates and actual on EVAL Grid N = %d, Dem = 2", N_SAMPLES)
+        ,xlab =  sprintf("(mclust g = %d, model = %s) (knn k = %d) \n (np cvml_bw = %f-%f rule_bw = %f-%f)"
+        ,mclust_model$G, mclust_model$modelName, round(N_SAMPLES ^ 0.8), np_cvml_bw$bw[1], np_cvml_bw$bw[2], np_rule_bw$bw[1], np_rule_bw$bw[2])
+        ,ylab = " mean(diff-sq ^ 2) / mean(actual ^ 2)",ylim = c(0,3), cex.main = 0.8, cex.axis = 0.8, cex.lab = 0.8)
+
+        dev.off()
+```
+
+``` {r}
+N_SAMPLES = 10000
+N_RUNS    = 30
+EVAL_RANGE_AXIS = c(seq(-5, -1, 0.1), seq(1,5,0.1))
+EVAL_RANGE      = expand.grid(EVAL_RANGE_AXIS, EVAL_RANGE_AXIS)
+
+means = c(0,0)
+covar = matrix(c(1,0,0,1), 2, 2)
+
+
+# == 
+diff_knn         = rep(0, N_RUNS)
+diff_np_cvml     = rep(0, N_RUNS)
+diff_np_rule     = rep(0, N_RUNS) 
+diff_mclust      = rep(0, N_RUNS)
+
+diff_knn_scaled         = rep(0, N_RUNS)
+diff_np_cvml_scaled     = rep(0, N_RUNS)
+diff_np_rule_scaled     = rep(0, N_RUNS) 
+diff_mclust_scaled      = rep(0, N_RUNS)
+
+for (i in 1:N_RUNS) {
+    message(i)
+    test_data = rmnorm(N_SAMPLES, means , covar)
+    actual_density = dmnorm(EVAL_RANGE, means, covar)
+    
+    # KNN Based
+    knn_est = knn_density(test_data, EVAL_RANGE, k = round(N_SAMPLES ^ 0.8))
+    
+    # Np Based
+    np_cvml_bw  = npudensbw(dat = test_data, bwmethod = "cv.ml", bwtype = "fixed", ckertype="gaussian")
+    np_cvml_est = npudens(np_cvml_bw, tdat = test_data, edat = EVAL_RANGE)$dens
+    
+    np_rule_bw  = npudensbw(dat = test_data, bwmethod = "normal-reference", bwtype = "fixed", ckertype="gaussian")
+    np_rule_est = npudens(np_rule_bw, tdat = test_data, edat = EVAL_RANGE)$dens
+
+    # MClust Based
+    mclust_model = densityMclust(test_data, G = 1:20)
+    mclust_est   = predict(mclust_model, EVAL_RANGE)
+    
+    diff_knn[i]         = mean( (knn_est - actual_density) ^ 2)
+    diff_np_cvml[i]     = mean( (np_cvml_est - actual_density) ^ 2)
+    diff_np_rule[i]     = mean( (np_rule_est - actual_density) ^ 2)
+    diff_mclust[i]      = mean( (mclust_est - actual_density) ^ 2)
+
+    diff_knn_scaled[i]         = mean( (knn_est - actual_density) ^ 2) / mean(actual_density ^ 2)
+    diff_np_cvml_scaled[i]     = mean( (np_cvml_est - actual_density) ^ 2) / mean(actual_density ^ 2)
+    diff_np_rule_scaled[i]     = mean( (np_rule_est - actual_density) ^ 2) / mean(actual_density ^ 2)
+    diff_mclust_scaled[i]      = mean( (mclust_est - actual_density) ^ 2) / mean(actual_density ^ 2)
+}
+diff_df = data.frame(diff_knn, diff_np_cvml, diff_np_rule, diff_mclust)
+diff_scaled_df = data.frame(diff_knn_scaled, diff_np_cvml_scaled, diff_np_rule_scaled, diff_mclust_scaled)
+
+        png(sprintf("Mean Sq-Diff of KDE estimates (unscaled) n = %d.png", N_SAMPLES))
+
+boxplot(diff_df, main = sprintf(" Mean Sq-Diff of KDE estimates and actual on EVAL Grid N = %d, Dem = 2", N_SAMPLES)
+        ,xlab =  sprintf("(mclust g = %d, model = %s) (knn k = %d) \n (np cvml_bw = %f-%f rule_bw = %f-%f)"
+        ,mclust_model$G, mclust_model$modelName, round(N_SAMPLES ^ 0.8), np_cvml_bw$bw[1], np_cvml_bw$bw[2], np_rule_bw$bw[1], np_rule_bw$bw[2])
+        ,ylab = " mean(diff-sq ^ 2)", cex.main = 0.8, cex.axis = 0.8, cex.lab = 0.8)
+
+        dev.off()
+
+        png(sprintf("Mean Sq-Diff of KDE estimates (scaled) n = %d.png", N_SAMPLES))
+        
+        
+boxplot(diff_scaled_df, main = sprintf(" Mean Sq-Diff of KDE estimates and actual on EVAL Grid N = %d, Dem = 2", N_SAMPLES)
+        ,xlab =  sprintf("(mclust g = %d, model = %s) (knn k = %d) \n (np cvml_bw = %f-%f rule_bw = %f-%f)"
+        ,mclust_model$G, mclust_model$modelName, round(N_SAMPLES ^ 0.8), np_cvml_bw$bw[1], np_cvml_bw$bw[2], np_rule_bw$bw[1], np_rule_bw$bw[2])
+        ,ylab = " mean(diff-sq ^ 2) / mean(actual ^ 2)",ylim = c(0,3), cex.main = 0.8, cex.axis = 0.8, cex.lab = 0.8)
+
+        dev.off()
+```
